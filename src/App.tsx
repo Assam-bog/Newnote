@@ -104,6 +104,36 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle browser back button
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      // If we have an open modal, close it
+      if (editingNote || isAddingReminder || isAddingTodo || editingHtml) {
+        setEditingNote(null);
+        setIsAddingReminder(false);
+        setIsAddingTodo(false);
+        setEditingHtml(null);
+        return;
+      }
+
+      // If we are not on the notes tab, go to notes tab
+      if (activeTab !== 'notes') {
+        setActiveTab('notes');
+        return;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Push state when "deeper" in the app
+    const shouldHaveBackState = !!(editingNote || isAddingReminder || isAddingTodo || editingHtml || activeTab !== 'notes');
+    if (shouldHaveBackState) {
+      window.history.pushState({ depth: 1 }, '');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [editingNote, isAddingReminder, isAddingTodo, editingHtml, activeTab]);
+
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
       const matchesSearch = n.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
