@@ -120,23 +120,30 @@ export default function App() {
         setIsAddingReminder(false);
         setIsAddingTodo(false);
         setEditingHtml(null);
+        // Push state back so we can catch the next back button
+        window.history.pushState({ depth: 1 }, '');
         return;
       }
 
       // If we are not on the notes tab, go to notes tab
       if (activeTab !== 'notes') {
         setActiveTab('notes');
+        // Push state back so we can catch the next back button
+        window.history.pushState({ depth: 1 }, '');
         return;
       }
+
+      // If we are on the notes tab and no modals are open, attempt to "close"
+      // Browser logic: window.close() usually only works for windows opened by script.
+      window.close();
+      // If close() is blocked or fails, we push state again so the user can try again
+      window.history.pushState({ depth: 1 }, '');
     };
 
     window.addEventListener('popstate', handlePopState);
     
-    // Push state when "deeper" in the app
-    const shouldHaveBackState = !!(editingNote || isAddingReminder || isAddingTodo || editingHtml || activeTab !== 'notes');
-    if (shouldHaveBackState) {
-      window.history.pushState({ depth: 1 }, '');
-    }
+    // Always ensure there is a state in history so the back button triggers popstate
+    window.history.pushState({ depth: 1 }, '');
 
     return () => window.removeEventListener('popstate', handlePopState);
   }, [editingNote, isAddingReminder, isAddingTodo, editingHtml, activeTab]);
