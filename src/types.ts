@@ -30,5 +30,5 @@ export type HtmlSnippet = {
 
 export type AppSettings = {
   fontStyle: string;
-  fontSize: string;
+  theme: 'light' | 'dark';
 };
