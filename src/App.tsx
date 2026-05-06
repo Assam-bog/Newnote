@@ -73,13 +73,36 @@ export default function App() {
     localStorage.setItem('settings', JSON.stringify(settings));
   }, [settings]);
 
-  // Reminder Alert System
+  // Reminder Alert System & Notification Permission
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       reminders.forEach(r => {
         if (!r.isCompleted && r.time <= now) {
-          alert(`Reminder: ${r.text}`);
+          // Trigger Notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const showSystemNotification = async () => {
+              const reg = await navigator.serviceWorker.ready;
+              reg.showNotification('QuiqNote Reminder', {
+                body: r.text,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico',
+                vibrate: [200, 100, 200],
+                tag: r.id,
+                requireInteraction: true
+              });
+            };
+            showSystemNotification();
+          } else {
+            alert(`Reminder: ${r.text}`);
+          }
+          
           setReminders(prev => prev.map(rem => rem.id === r.id ? { ...rem, isCompleted: true } : rem));
         }
       });
