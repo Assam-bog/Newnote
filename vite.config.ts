@@ -11,7 +11,11 @@ export default defineConfig(({mode}) => {
       react(), 
       tailwindcss(),
       VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         registerType: 'autoUpdate',
+        injectRegister: 'auto',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
         manifest: {
           name: 'QuiqNote',
@@ -20,7 +24,22 @@ export default defineConfig(({mode}) => {
           theme_color: '#4f46e5',
           background_color: '#ffffff',
           display: 'standalone',
-          icons: []
+          icons: [
+            {
+               src: 'pwa-192x192.png',
+               sizes: '192x192',
+               type: 'image/png'
+            },
+            {
+               src: 'pwa-512x512.png',
+               sizes: '512x512',
+               type: 'image/png'
+            }
+          ]
+        },
+        devOptions: {
+          enabled: true,
+          type: 'module'
         }
       })
     ],

@@ -26,6 +26,8 @@ import {
   Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { db } from './db';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Note, Reminder, Todo, HtmlSnippet, AppSettings } from './types';
 
 // Components (will be defined below or moved to separate files if needed)
@@ -37,11 +39,12 @@ export default function App() {
     setActiveTab(tab);
   };
   
-  // Persistence
-  const [notes, setNotes] = useState<Note[]>(() => JSON.parse(localStorage.getItem('notes') || '[]'));
-  const [reminders, setReminders] = useState<Reminder[]>(() => JSON.parse(localStorage.getItem('reminders') || '[]'));
-  const [todos, setTodos] = useState<Todo[]>(() => JSON.parse(localStorage.getItem('todos') || '[]'));
-  const [htmlSnippets, setHtmlSnippets] = useState<HtmlSnippet[]>(() => JSON.parse(localStorage.getItem('htmlSnippets') || '[]'));
+  // Persistence using Dexie
+  const notes = useLiveQuery(() => db.notes.reverse().toArray()) || [];
+  const reminders = useLiveQuery(() => db.reminders.toArray()) || [];
+  const todos = useLiveQuery(() => db.todos.toArray()) || [];
+  const htmlSnippets = useLiveQuery(() => db.htmlSnippets.reverse().toArray()) || [];
+  
   const [settings, setSettings] = useState<AppSettings>(() => JSON.parse(localStorage.getItem('settings') || '{"fontStyle": "font-sans", "theme": "light"}'));
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,22 +57,6 @@ export default function App() {
   const [editingHtml, setEditingHtml] = useState<HtmlSnippet | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('notes', JSON.stringify(notes));
-  }, [notes]);
-
-  useEffect(() => {
-    localStorage.setItem('reminders', JSON.stringify(reminders));
-  }, [reminders]);
-
-  useEffect(() => {
-    localStorage.setItem('todos', JSON.stringify(todos));
-  }, [todos]);
-
-  useEffect(() => {
-    localStorage.setItem('htmlSnippets', JSON.stringify(htmlSnippets));
-  }, [htmlSnippets]);
-
-  useEffect(() => {
     localStorage.setItem('settings', JSON.stringify(settings));
   }, [settings]);
 
@@ -80,6 +67,7 @@ export default function App() {
     }
   }, []);
 
+  // Alert system in the app for active session
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -96,14 +84,14 @@ export default function App() {
                 vibrate: [200, 100, 200],
                 tag: r.id,
                 requireInteraction: true
-              });
+              } as any);
             };
             showSystemNotification();
           } else {
             alert(`Reminder: ${r.text}`);
           }
           
-          setReminders(prev => prev.map(rem => rem.id === r.id ? { ...rem, isCompleted: true } : rem));
+          db.reminders.update(r.id, { isCompleted: true });
         }
       });
     }, 10000); // Check every 10s
@@ -112,24 +100,17 @@ export default function App() {
 
   // Auto-delete completed tasks after 5 minutes
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       const now = Date.now();
       const fiveMinutes = 5 * 60 * 1000;
       
-      setTodos(currentTodos => {
-        const filtered = currentTodos.filter(todo => {
-          if (todo.isCompleted && todo.completedAt) {
-            return now - todo.completedAt < fiveMinutes;
-          }
-          return true;
-        });
-        
-        if (filtered.length !== currentTodos.length) {
-          return filtered;
+      const finishedTodos = await db.todos.where('isCompleted').equals(1).toArray();
+      for (const todo of finishedTodos) {
+        if (todo.completedAt && (now - todo.completedAt > fiveMinutes)) {
+          await db.todos.delete(todo.id);
         }
-        return currentTodos;
-      });
-    }, 10000); // Check every 10 seconds for smoothness
+      }
+    }, 10000);
     
     return () => clearInterval(interval);
   }, []);
@@ -197,7 +178,7 @@ export default function App() {
     { name: 'Mono', class: 'font-mono' }
   ];
 
-  const addNote = (note: Partial<Note>) => {
+  const addNote = async (note: Partial<Note>) => {
     if (!note.title?.trim() && !note.content?.trim()) return;
     const newNote: Note = {
       id: crypto.randomUUID(),
@@ -207,24 +188,24 @@ export default function App() {
       color: note.color || colors[Math.floor(Math.random() * colors.length)],
       createdAt: Date.now(),
     };
-    setNotes(prev => [newNote, ...prev]);
+    await db.notes.add(newNote);
   };
 
-  const updateNote = (id: string, updates: Partial<Note>) => {
+  const updateNote = async (id: string, updates: Partial<Note>) => {
     if (updates.title !== undefined && updates.content !== undefined) {
       if (!updates.title.trim() && !updates.content.trim()) {
         deleteNote(id);
         return;
       }
     }
-    setNotes(prev => prev.map(n => n.id === id ? { ...n, ...updates } : n));
+    await db.notes.update(id, updates);
   };
 
-  const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(n => n.id !== id));
+  const deleteNote = async (id: string) => {
+    await db.notes.delete(id);
   };
 
-  const addReminder = (text: string, time: number) => {
+  const addReminder = async (text: string, time: number) => {
     if (!text.trim()) return;
     const newReminder: Reminder = {
       id: crypto.randomUUID(),
@@ -232,42 +213,44 @@ export default function App() {
       time,
       isCompleted: false,
     };
-    setReminders(prev => [newReminder, ...prev]);
+    await db.reminders.add(newReminder);
     setIsAddingReminder(false);
   };
 
-  const deleteReminder = (id: string) => {
-    setReminders(prev => prev.filter(r => r.id !== id));
+  const deleteReminder = async (id: string) => {
+    await db.reminders.delete(id);
   };
 
-  const addTodo = (text: string) => {
+  const addTodo = async (text: string) => {
     if (!text.trim()) return;
     const newTodo: Todo = {
       id: crypto.randomUUID(),
       text: text.trim(),
       isCompleted: false,
     };
-    setTodos(prev => [newTodo, ...prev]);
+    await db.todos.add(newTodo);
     setIsAddingTodo(false);
   };
 
-  const toggleTodo = (id: string) => {
-    setTodos(prev => prev.map(t => 
-      t.id === id 
-        ? { ...t, isCompleted: !t.isCompleted, completedAt: !t.isCompleted ? Date.now() : undefined } 
-        : t
-    ));
+  const toggleTodo = async (id: string) => {
+    const todo = await db.todos.get(id);
+    if (todo) {
+      await db.todos.update(id, { 
+        isCompleted: !todo.isCompleted, 
+        completedAt: !todo.isCompleted ? Date.now() : undefined 
+      });
+    }
   };
 
-  const deleteTodo = (id: string) => {
-    setTodos(prev => prev.filter(t => t.id !== id));
+  const deleteTodo = async (id: string) => {
+    await db.todos.delete(id);
   };
 
-  const deleteHtmlSnippet = (id: string) => {
-    setHtmlSnippets(prev => prev.filter(h => h.id !== id));
+  const deleteHtmlSnippet = async (id: string) => {
+    await db.htmlSnippets.delete(id);
   };
 
-  const saveHtml = (snippet: Partial<HtmlSnippet>) => {
+  const saveHtml = async (snippet: Partial<HtmlSnippet>) => {
     const finalName = snippet.name?.trim() || 'untitled';
     const finalCode = snippet.code || '';
 
@@ -277,7 +260,7 @@ export default function App() {
     }
     
     if (editingHtml?.id) {
-       setHtmlSnippets(prev => prev.map(h => h.id === editingHtml.id ? { ...h, name: finalName, code: finalCode } : h));
+       await db.htmlSnippets.update(editingHtml.id, { name: finalName, code: finalCode });
     } else {
       const newSnippet: HtmlSnippet = {
         id: crypto.randomUUID(),
@@ -285,7 +268,7 @@ export default function App() {
         code: finalCode,
         createdAt: Date.now(),
       };
-      setHtmlSnippets(prev => [newSnippet, ...prev]);
+      await db.htmlSnippets.add(newSnippet);
     }
     setEditingHtml(null);
   };
